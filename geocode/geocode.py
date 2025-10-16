@@ -48,7 +48,7 @@ class Geocode():
         self.geo_data = self.get_geonames_pickle()
 
     def get_geonames_data(self):
-        geonames_data_path = self.get_cache_path('allCountries.txt')
+        geonames_data_path = self.get_cache_path('CA.txt')
         if not os.path.isfile(geonames_data_path):
             # download file
             url = 'https://download.geonames.org/export/dump/CA.zip'
@@ -64,15 +64,117 @@ class Geocode():
             # remove zip file
             os.remove(geonames_data_path_zip)
         log.info(f'Reading data from {geonames_data_path}...')
-        dtypes = {'name': str, 'latitude': float, 'longitude': float, 'country_code': str, 'population': int, 'feature_code': str, 'alternatenames': str, 'geoname_id': str}
+        dtypes = {'name': str, 'latitude': float, 'longitude': float, 'country_code': str, 'population': int, 'feature_code': str, 'alternatenames': str, 'geoname_id': str, 'admin1': str}
         geonames_columns = ['geoname_id', 'name', 'asciiname', 'alternatenames', 'latitude', 'longitude', 'feature_class', 'feature_code', 'country_code', 'cc2', 'admin1', 'admin2', 'admin3', 'admin4', 'population', 'elevation', 'dem', 'timezone', 'modification_date']
-        provinces = ["Alberta", "British Columbia", "Manitoba", "New Brunswick", "Newfoundland and Labrador", "Undefined", "Nova Scotia", "Ontario", "Prince Edward Island", "Quebec", "Saskatchewan", "Yukon", "Northwest Territories"]
-        df = pd.read_csv(geonames_data_path, names=geonames_columns, sep='\t', dtype=dtypes, usecols=dtypes.keys())
-        # Extract admin1 directly from the existing dataframe and convert to int, then map to province names.
-        df['admin1'] = df['admin1'].astype(int)
+        provinces = ["Alberta", "British Columbia", "Manitoba", "New Brunswick", "Newfoundland and Labrador", "Undefined", "Nova Scotia", "Ontario", "Prince Edward Island", "Quebec", "Saskatchewan", "Yukon", "Northwest Territories", "Nunavut"]
+        df = pd.read_csv(geonames_data_path, names=geonames_columns, sep='\t', dtype=dtypes, usecols=dtypes.keys(),engine="python")
+        # Normalize admin1: strip leading zeros, coerce non-numeric/empty to NaN, then fill missing with 6 ("Undefined")
+        df['admin1'] = df['admin1'].replace(r'^\s*$', np.nan, regex=True)  # empty -> NaN
+        admin1_str = df['admin1'].astype(str).str.strip()
+        # astype(str) turns NaN into 'nan', revert those to actual NaN
+        admin1_str = admin1_str.replace({'nan': None})
+        # remove leading zeros (e.g. '01' -> '1'), empty strings -> NaN
+        admin1_str = admin1_str.fillna('').str.lstrip('0').replace('', np.nan)
+        # coerce to numeric, invalid -> NaN
+        df['admin1'] = pd.to_numeric(admin1_str, errors='coerce')
+        # fill missing with 6 (maps to "Undefined" in provinces list) to avoid later astype(int) errors
+        df['admin1'] = df['admin1'].fillna(6).astype(int)
         df['province'] = df['admin1'].apply(lambda x: provinces[x - 1])
         # remove data file
         os.remove(geonames_data_path)
+
+        #add gov of Canada data
+        # add gov of Canada data
+        try:
+            cgn_url = 'https://ftp.maps.canada.ca/pub/nrcan_rncan/vector/geobase_cgn_toponyme/prov_csv_eng/cgn_canada_csv_eng.zip'
+            cgn_zip_path = self.get_cache_path('cgn_canada_csv_eng.zip')
+            if not os.path.isfile(cgn_zip_path):
+                log.info(f'Downloading CGN data from {cgn_url}')
+                urllib.request.urlretrieve(cgn_url, cgn_zip_path)
+                log.info('... done')
+
+            with zipfile.ZipFile(cgn_zip_path, 'r') as z:
+                csv_names = [n for n in z.namelist() if n.lower().endswith('.csv')]
+                if not csv_names:
+                    log.warning('No CSV found inside CGN zip archive')
+                    cgn_df = pd.DataFrame()
+                else:
+                    with z.open(csv_names[0]) as f:
+                        # read as strings to avoid dtype surprises
+                        cgn_df = pd.read_csv(f, dtype=str)
+
+            # clean up zip file
+            try:
+                os.remove(cgn_zip_path)
+            except OSError:
+                pass
+
+            if not cgn_df.empty:
+                # normalize column names (strip spaces)
+                cgn_df.columns = [c.strip() for c in cgn_df.columns]
+
+                # find relevant columns (case-insensitive)
+                def _find_col(df, target):
+                    target_l = target.lower()
+                    for c in df.columns:
+                        if c.lower() == target_l:
+                            return c
+                    return None
+
+                id_col = _find_col(cgn_df, 'ID')
+                name_col = _find_col(cgn_df, 'Geographical Name')
+                lat_col = _find_col(cgn_df, 'Latitude')
+                lon_col = _find_col(cgn_df, 'Longitude')
+                prov_col = _find_col(cgn_df, 'Province - Territory')
+
+                # prepare a dataframe matching the existing dataframe's columns
+                existing_cols = list(df.columns)
+                rows = []
+                for _, row in cgn_df.iterrows():
+                    new_row = {}
+                    for col in existing_cols:
+                        if col == 'geoname_id':
+                            new_row[col] = f"CGN_{str(row[id_col])}" if id_col and pd.notna(row.get(id_col, None)) else 'CGN_NA'
+                        elif col == 'name' or col == 'asciiname' or col == 'alternatenames':
+                            new_row[col] = row[name_col] if name_col and pd.notna(row.get(name_col, None)) else 'Not Applicable'
+                        elif col == 'latitude':
+                            try:
+                                new_row[col] = float(row[lat_col]) if lat_col and pd.notna(row.get(lat_col, None)) else np.nan
+                            except Exception:
+                                new_row[col] = np.nan
+                        elif col == 'longitude':
+                            try:
+                                new_row[col] = float(row[lon_col]) if lon_col and pd.notna(row.get(lon_col, None)) else np.nan
+                            except Exception:
+                                new_row[col] = np.nan
+                        elif col == 'country_code':
+                            new_row[col] = 'CA'
+                        elif col == 'population':
+                            new_row[col] = -1
+                        elif col == 'feature_code' or col == 'cc2' or col.startswith('admin'):
+                            # these fields don't exist in CGN; pad with Not Applicable (or NaN where appropriate)
+                            new_row[col] = 'Not Applicable'
+                        elif col == "province":
+                            new_row[col] = row[prov_col] if prov_col else 'Not Applicable'
+                        else:
+                            # generic fallback for any other column present in df
+                            new_row[col] = 'Not Applicable'
+                    rows.append(new_row)
+
+                cgn_rows_df = pd.DataFrame.from_records(rows, columns=list(df.columns))
+                # ensure numeric dtypes for lat/lon/population where possible
+                if 'latitude' in cgn_rows_df.columns:
+                    cgn_rows_df['latitude'] = pd.to_numeric(cgn_rows_df['latitude'], errors='coerce')
+                if 'longitude' in cgn_rows_df.columns:
+                    cgn_rows_df['longitude'] = pd.to_numeric(cgn_rows_df['longitude'], errors='coerce')
+                if 'population' in cgn_rows_df.columns:
+                    cgn_rows_df['population'] = pd.to_numeric(cgn_rows_df['population'], errors='coerce').fillna(-1).astype(int)
+
+                df = pd.concat([df, cgn_rows_df[df.columns]], ignore_index=True, sort=False)
+                log.info(f'... appended {len(cgn_rows_df):,} CGN records to geonames dataframe')
+        except Exception as e:
+            log.exception(f'Failed to append CGN data: {e}')
+
         return df
 
     def get_feature_names_data(self):
@@ -179,9 +281,6 @@ class Geocode():
         df['is_country'] = df.feature_code.str.startswith('PCL')
         df['is_ascii'] = df.name.apply(is_ascii)
         # add "US" manually since it's missing in geonames
-        row_usa = df[df.is_country & (df.name == 'USA')].iloc[0]
-        row_usa['name'] = 'US'
-        df = pd.concat([df, pd.DataFrame.from_records([row_usa])])
         df = df[
                 (~df.is_ascii) |
                 (df.name.str.len() > 2) |
