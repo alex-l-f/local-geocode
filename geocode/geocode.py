@@ -66,7 +66,11 @@ class Geocode():
         log.info(f'Reading data from {geonames_data_path}...')
         dtypes = {'name': str, 'latitude': float, 'longitude': float, 'country_code': str, 'population': int, 'feature_code': str, 'alternatenames': str, 'geoname_id': str}
         geonames_columns = ['geoname_id', 'name', 'asciiname', 'alternatenames', 'latitude', 'longitude', 'feature_class', 'feature_code', 'country_code', 'cc2', 'admin1', 'admin2', 'admin3', 'admin4', 'population', 'elevation', 'dem', 'timezone', 'modification_date']
+        provinces = ["Alberta", "British Columbia", "Manitoba", "New Brunswick", "Newfoundland and Labrador", "Undefined", "Nova Scotia", "Ontario", "Prince Edward Island", "Quebec", "Saskatchewan", "Yukon", "Northwest Territories"]
         df = pd.read_csv(geonames_data_path, names=geonames_columns, sep='\t', dtype=dtypes, usecols=dtypes.keys())
+        # Extract admin1 directly from the existing dataframe and convert to int, then map to province names.
+        df['admin1'] = df['admin1'].astype(int)
+        df['province'] = df['admin1'].apply(lambda x: provinces[x - 1])
         # remove data file
         os.remove(geonames_data_path)
         return df
