@@ -51,9 +51,9 @@ class Geocode():
         geonames_data_path = self.get_cache_path('allCountries.txt')
         if not os.path.isfile(geonames_data_path):
             # download file
-            url = 'https://download.geonames.org/export/dump/allCountries.zip'
+            url = 'https://download.geonames.org/export/dump/CA.zip'
             log.info(f'Downloading data from {url}')
-            geonames_data_path_zip = self.get_cache_path('allCountries.zip')
+            geonames_data_path_zip = self.get_cache_path('CA.zip')
             urllib.request.urlretrieve(url, geonames_data_path_zip)
             log.info(f'... done')
             log.info('Extracting data...')
