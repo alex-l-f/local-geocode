@@ -67,7 +67,7 @@ class Geocode():
         dtypes = {'name': str, 'latitude': float, 'longitude': float, 'country_code': str, 'population': int, 'feature_code': str, 'alternatenames': str, 'geoname_id': str, 'admin1': str}
         geonames_columns = ['geoname_id', 'name', 'asciiname', 'alternatenames', 'latitude', 'longitude', 'feature_class', 'feature_code', 'country_code', 'cc2', 'admin1', 'admin2', 'admin3', 'admin4', 'population', 'elevation', 'dem', 'timezone', 'modification_date']
         provinces = ["Alberta", "British Columbia", "Manitoba", "New Brunswick", "Newfoundland and Labrador", "Undefined", "Nova Scotia", "Ontario", "Prince Edward Island", "Quebec", "Saskatchewan", "Yukon", "Northwest Territories", "Nunavut"]
-        df = pd.read_csv(geonames_data_path, names=geonames_columns, sep='\t', dtype=dtypes, usecols=dtypes.keys(),engine="python")
+        df = pd.read_csv(geonames_data_path, names=geonames_columns, sep='\t', dtype=dtypes, usecols=dtypes.keys())
         # Normalize admin1: strip leading zeros, coerce non-numeric/empty to NaN, then fill missing with 6 ("Undefined")
         df['admin1'] = df['admin1'].replace(r'^\s*$', np.nan, regex=True)  # empty -> NaN
         admin1_str = df['admin1'].astype(str).str.strip()
