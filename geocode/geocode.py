@@ -84,7 +84,6 @@ class Geocode():
         os.remove(geonames_data_path)
 
         #add gov of Canada data
-        # add gov of Canada data
         try:
             cgn_url = 'https://ftp.maps.canada.ca/pub/nrcan_rncan/vector/geobase_cgn_toponyme/prov_csv_eng/cgn_canada_csv_eng.zip'
             cgn_zip_path = self.get_cache_path('cgn_canada_csv_eng.zip')

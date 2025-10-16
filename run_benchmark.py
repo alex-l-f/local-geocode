@@ -26,8 +26,8 @@ def read_benchmark_data():
 
 def predict_local_geocode(df):
     gc = Geocode()
-    gc.prepare(recompute=False)
-    gc.init()
+    gc.load(recompute=False)
+    #gc.init()
     df['local_geocode_predicted'] = np.nan
     df['local_geocode_is_correct'] = False
     for i, row in tqdm(df.iterrows(), total=len(df)):
